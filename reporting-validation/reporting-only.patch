@@ -1,0 +1,37 @@
+--- a/NightscoutServiceKit/Extensions/DoseEntry.swift
++++ b/NightscoutServiceKit/Extensions/DoseEntry.swift
+@@ -6,6 +6,7 @@
+ //  Copyright © 2019 LoopKit Authors. All rights reserved.
+ //
+ 
++import Foundation
+ import LoopKit
+ import NightscoutKit
+ 
+@@ -16,7 +17,25 @@
+ 
+         switch type {
+         case .basal:
+-            return nil
++            // Export the existing immutable Loop record as a note, never as a
++            // temp basal or bolus. Preserve its calculation basis explicitly.
++            guard !isMutable, let identifier = syncIdentifier else { return nil }
++            let basis = deliveredUnits != nil ? "reportedDeliveredUnits" :
++                (identifier.hasPrefix("BasalRateSchedule ") ? "scheduleDerived" : "recordedUnits")
++            let payload: [String: Any] = [
++                "schema": "loop-basal-report-v1",
++                "startUTC": ISO8601DateFormatter().string(from: startDate),
++                "endUTC": ISO8601DateFormatter().string(from: endDate),
++                "units": unitsInDeliverableIncrements,
++                "basis": basis,
++                "immutable": true
++            ]
++            guard JSONSerialization.isValidJSONObject(payload),
++                  let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
++                  let notes = String(data: data, encoding: .utf8) else { return nil }
++            return NightscoutTreatment(timestamp: startDate, enteredBy: source,
++                notes: notes, eventType: .note, syncIdentifier: identifier,
++                insulinType: insulinType?.brandName)
+         case .bolus:
+             return BolusNightscoutTreatment(
+                 timestamp: startDate,

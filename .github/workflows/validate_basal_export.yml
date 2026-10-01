@@ -1,0 +1,35 @@
+name: Validate reporting export (unsigned)
+on:
+  push:
+    branches: [codex/validate-basal-reporting]
+    paths: ['reporting-validation/**', '.github/workflows/validate_basal_export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Select compiler
+        run: sudo xcode-select --switch /Applications/Xcode_26.5.app/Contents/Developer
+      - name: Prepare reporting-only patch and isolated scheme
+        run: python3 reporting-validation/prepare.py
+      - name: Select simulator
+        run: |
+          xcrun simctl list devices available --json > /tmp/reporting-devices.json
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          data=json.load(open('/tmp/reporting-devices.json'))
+          rows=[d for runtime,devices in data['devices'].items() if 'iOS' in runtime for d in devices if d.get('isAvailable') and 'iPhone' in d['name']]
+          assert rows, 'No available iPhone simulator'
+          print('REPORTING_SIMULATOR='+rows[0]['udid'])
+          PY
+      - name: Compile and test reporting framework without signing or distribution
+        run: |
+          set -o pipefail
+          xcodebuild test -workspace LoopWorkspace.xcworkspace -scheme ReportingValidation -destination "id=$REPORTING_SIMULATOR" -derivedDataPath /tmp/reporting-build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tee /tmp/reporting-build.log
