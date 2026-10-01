@@ -8,20 +8,23 @@
  import LoopKit
  import NightscoutKit
  
-@@ -16,7 +17,25 @@
+@@ -16,7 +17,28 @@
  
          switch type {
          case .basal:
 -            return nil
 +            // Export the existing immutable Loop record as a note, never as a
 +            // temp basal or bolus. Preserve its calculation basis explicitly.
-+            guard !isMutable, let identifier = syncIdentifier else { return nil }
++            guard !isMutable, endDate >= startDate,
++                  let identifier = syncIdentifier, !identifier.isEmpty else { return nil }
 +            let basis = deliveredUnits != nil ? "reportedDeliveredUnits" :
 +                (identifier.hasPrefix("BasalRateSchedule ") ? "scheduleDerived" : "recordedUnits")
 +            let payload: [String: Any] = [
 +                "schema": "loop-basal-report-v1",
 +                "startUTC": ISO8601DateFormatter().string(from: startDate),
 +                "endUTC": ISO8601DateFormatter().string(from: endDate),
++                "startUnixSeconds": startDate.timeIntervalSince1970,
++                "endUnixSeconds": endDate.timeIntervalSince1970,
 +                "units": unitsInDeliverableIncrements,
 +                "basis": basis,
 +                "immutable": true
@@ -35,3 +38,27 @@
          case .bolus:
              return BolusNightscoutTreatment(
                  timestamp: startDate,
+--- a/NightscoutServiceKit/NightscoutService.swift
++++ b/NightscoutServiceKit/NightscoutService.swift
+@@ -15,6 +15,7 @@
+     case incompatibleTherapySettings
+     case missingCredentials
+     case missingCommandSource
++    case uploadedObjectCountMismatch
+ }
+ 
+ 
+@@ -206,7 +207,12 @@
+                 completion(.failure(error))
+             case .success(let createdObjectIds):
+                 let createdUploaded = !created.isEmpty
+-                let syncIdentifiers = created.map { $0.syncIdentifier }
++                let uploadedDoses = created.filter { $0.treatment(enteredBy: "", withObjectId: nil) != nil }
++                guard uploadedDoses.count == createdObjectIds.count else {
++                    completion(.failure(NightscoutServiceError.uploadedObjectCountMismatch))
++                    return
++                }
++                let syncIdentifiers = uploadedDoses.map { $0.syncIdentifier }
+                 for (syncIdentifier, objectId) in zip(syncIdentifiers, createdObjectIds) {
+                     if let syncIdentifier = syncIdentifier {
+                         self.objectIdCache.add(syncIdentifier: syncIdentifier, objectId: objectId)
