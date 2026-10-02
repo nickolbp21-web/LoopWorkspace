@@ -122,7 +122,7 @@
  }
  
  
-@@ -235,6 +236,60 @@
+@@ -235,6 +236,73 @@
          }
      }
  
@@ -134,6 +134,9 @@
 +        guard !wanted.isEmpty, let first = wanted.map({ $0.timestamp }).min(),
 +              let last = wanted.map({ $0.timestamp }).max() else {
 +            completion(.success(false)); return
++        }
++        guard Set(wanted.compactMap { $0.syncIdentifier }).count == wanted.count else {
++            completion(.failure(NightscoutServiceError.uploadedObjectCountMismatch)); return
 +        }
 +        let interval = DateInterval(start: first.addingTimeInterval(-1), end: last.addingTimeInterval(1))
 +        func reconcile(_ actual: [NightscoutTreatment]) throws -> [NightscoutTreatment] {
@@ -150,13 +153,22 @@
 +            }
 +            return missing
 +        }
++        func cacheVerifiedSnapshot(_ actual: [NightscoutTreatment]) throws {
++            for item in wanted {
++                guard let identifier = item.syncIdentifier,
++                      let objectId = actual.first(where: { $0.syncIdentifier == identifier })?.id,
++                      !objectId.isEmpty else { throw NightscoutServiceError.uploadedObjectCountMismatch }
++                self.objectIdCache.add(syncIdentifier: identifier, objectId: objectId)
++            }
++            self.stateDelegate?.pluginDidUpdateState(self)
++        }
 +        uploader.fetchTreatments(dateInterval: interval, maxCount: 5000) { result in
 +            switch result {
 +            case .failure(let error): completion(.failure(error))
 +            case .success(let actual):
 +                do {
 +                    let missing = try reconcile(actual)
-+                    if missing.isEmpty { completion(.success(true)); return }
++                    if missing.isEmpty { try cacheVerifiedSnapshot(actual); completion(.success(true)); return }
 +                    uploader.upload(missing) { result in
 +                        switch result {
 +                        case .failure(let error): completion(.failure(error))
@@ -169,6 +181,7 @@
 +                                        guard try reconcile(verified).isEmpty else {
 +                                            throw NightscoutServiceError.uploadedObjectCountMismatch
 +                                        }
++                                        try cacheVerifiedSnapshot(verified)
 +                                        completion(.success(true))
 +                                    } catch { completion(.failure(error)) }
 +                                }
@@ -183,7 +196,7 @@
      public var doseDataLimit: Int? { return 1000 }
  
      public func uploadDoseData(created: [DoseEntry], deleted: [DoseEntry], completion: @escaping (_ result: Result<Bool, Error>) -> Void) {
-@@ -249,7 +304,12 @@
+@@ -249,7 +317,12 @@
                  completion(.failure(error))
              case .success(let createdObjectIds):
                  let createdUploaded = !created.isEmpty
@@ -197,3 +210,30 @@
                  for (syncIdentifier, objectId) in zip(syncIdentifiers, createdObjectIds) {
                      if let syncIdentifier = syncIdentifier {
                          self.objectIdCache.add(syncIdentifier: syncIdentifier, objectId: objectId)
+--- a/NightscoutServiceKit/Extensions/NightscoutUploader.swift
++++ b/NightscoutServiceKit/Extensions/NightscoutUploader.swift
+@@ -146,14 +146,18 @@
+         }
+     }
+ 
++    func doseDeletionObjectIds(_ data: [DoseEntry], usingObjectIdCache objectIdCache: ObjectIdCache) -> [String] {
++        return data.flatMap { dose -> [String] in
++            guard let identifier = dose.syncIdentifier else { return [] }
++            return [identifier, "loop-basal-snapshot-v1:" + identifier].compactMap {
++                objectIdCache.findObjectIdBySyncIdentifier($0)
++            }
++        }
++    }
++
+     func deleteDoses(_ data: [DoseEntry], usingObjectIdCache objectIdCache: ObjectIdCache, completion: @escaping (Result<Bool, Error>) -> Void) {
+ 
+-        let objectIds = data.compactMap { (doseEntry) -> String? in
+-            if let syncIdentifier = doseEntry.syncIdentifier {
+-                return objectIdCache.findObjectIdBySyncIdentifier(syncIdentifier)
+-            }
+-            return nil
+-        }
++        let objectIds = doseDeletionObjectIds(data, usingObjectIdCache: objectIdCache)
+ 
+         guard !objectIds.isEmpty else {
+             completion(.success(false))
