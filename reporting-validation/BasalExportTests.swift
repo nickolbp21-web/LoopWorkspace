@@ -116,7 +116,7 @@ import NightscoutKit
 
 final class SnapshotDeletionTests: XCTestCase {
     func testDeletedSourceRemovesNormalAndRecoveredRepresentations() {
-        let cache = ObjectIdCache()
+        var cache = ObjectIdCache()
         cache.add(syncIdentifier: "synthetic", objectId: "normal-id")
         cache.add(syncIdentifier: "loop-basal-snapshot-v1:synthetic", objectId: "snapshot-id")
         let client = NightscoutClient(siteURL: URL(string: "https://example.invalid")!, apiSecret: "synthetic")
@@ -124,7 +124,7 @@ final class SnapshotDeletionTests: XCTestCase {
         XCTAssertEqual(client.doseDeletionObjectIds([dose], usingObjectIdCache: cache), ["normal-id", "snapshot-id"])
     }
     func testUnknownSourceCannotDeleteAnotherRecord() {
-        let cache = ObjectIdCache()
+        var cache = ObjectIdCache()
         cache.add(syncIdentifier: "different", objectId: "unrelated-id")
         let client = NightscoutClient(siteURL: URL(string: "https://example.invalid")!, apiSecret: "synthetic")
         let dose = DoseEntry(type: .basal, startDate: Date(timeIntervalSince1970: 1700000000), value: 0.05, unit: .units, syncIdentifier: "synthetic")
