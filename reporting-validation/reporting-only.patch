@@ -1,7 +1,7 @@
 --- a/NightscoutServiceKit/Extensions/DoseEntry.swift
 +++ b/NightscoutServiceKit/Extensions/DoseEntry.swift
 @@ -6,6 +6,7 @@
- //  Copyright Â© 2019 LoopKit Authors. All rights reserved.
+ //  Copyright © 2019 LoopKit Authors. All rights reserved.
  //
  
 +import Foundation
