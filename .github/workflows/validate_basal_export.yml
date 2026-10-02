@@ -2,7 +2,7 @@ name: Validate reporting export (unsigned)
 on:
   push:
     branches: [codex/validate-basal-reporting]
-    paths: ['reporting-validation/**', '.github/workflows/validate_basal_export.yml']
+    paths: ['reporting-validation/**', '!reporting-validation/verify_testflight.rb', '.github/workflows/validate_basal_export.yml']
   workflow_dispatch:
 permissions:
   contents: read

@@ -2,9 +2,15 @@ name: Verify approved reporting TestFlight processing
 # Inspect recent build metadata to diagnose Apple ingestion delay.
 on:
   workflow_dispatch:
-  push:
-    branches: [codex/validate-basal-reporting]
-    paths: ['.github/workflows/verify_reporting_testflight.yml']
+    inputs:
+      build:
+        description: Expected reporting build number
+        required: true
+        default: '4'
+      uploaded_after:
+        description: Earliest allowed upload time in UTC
+        required: true
+        default: '2026-10-02T06:00:00Z'
 permissions:
   contents: read
 jobs:
@@ -19,6 +25,8 @@ jobs:
       - name: Read Apple processing status without changing distribution
         run: bundle exec ruby reporting-validation/verify_testflight.rb
         env:
+          REPORTING_EXPECTED_BUILD: ${{ inputs.build }}
+          REPORTING_UPLOADED_AFTER: ${{ inputs.uploaded_after }}
           TEAMID: ${{ secrets.TEAMID }}
           FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
           FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
