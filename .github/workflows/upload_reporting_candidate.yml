@@ -12,6 +12,10 @@ jobs:
     timeout-minutes: 60
     env:
       MATCH_READONLY: 'true'
+      GYM_CLONED_SOURCE_PACKAGES_PATH: /tmp/reporting-packages
+      GYM_DISABLE_PACKAGE_AUTOMATIC_UPDATES: 'true'
+      GYM_SKIP_PACKAGE_REPOSITORY_FETCHES: 'true'
+      PILOT_CHANGELOG: 'Reporting only: preserve precise basal timestamps and recover cached immutable basal records as notes. No dosing changes.'
     steps:
       - uses: actions/checkout@v5
         with:
@@ -25,10 +29,17 @@ jobs:
           import hashlib,subprocess
           from pathlib import Path
           p=Path('reporting-validation/reporting-only.patch')
-          assert hashlib.sha256(p.read_bytes()).hexdigest() == 'e2af981700525c7b31af8fbb1809454d19dd1fb93842261b5e3f8d7b851f05b4'
+          assert hashlib.sha256(p.read_bytes()).hexdigest() == '4db11e7153ee2bcf25d8fc315ba7fcb53a35eda8dc49c6fc62fdbf013eed773f'
           subprocess.run(['git','-C','NightscoutService','apply','--check','../reporting-validation/reporting-only.patch'],check=True)
           subprocess.run(['git','-C','NightscoutService','apply','../reporting-validation/reporting-only.patch'],check=True)
+          for repo, name in [('LoopKit','snapshot-loopkit.patch'),('Loop','snapshot-loop.patch')]:
+            subprocess.run(['git','-C',repo,'apply','--check','../reporting-validation/'+name],check=True)
+            subprocess.run(['git','-C',repo,'apply','../reporting-validation/'+name],check=True)
           PY
+      - name: Resolve pinned reporting packages
+        run: xcodebuild -resolvePackageDependencies -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace -clonedSourcePackagesDirPath /tmp/reporting-packages
+      - name: Add validated precision metadata to pinned serializer
+        run: python3 reporting-validation/prepare_package_precision.py /tmp/reporting-packages
       - name: Install existing pinned build dependencies
         run: bundle install
       - name: Suppress credential-derived table output
