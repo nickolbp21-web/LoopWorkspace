@@ -12,8 +12,8 @@ Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
 app = Spaceship::ConnectAPI::App.find("com.#{ENV.fetch('TEAMID')}.loopkit.Loop")
 raise 'Existing app not found' unless app
 previous = nil
-40.times do
-  builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, version: '3.14.8', build_number: '3')
+1.times do
+  builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, build_number: '3')
   build = builds.find { |b| Time.parse(b.uploaded_date) >= Time.parse('2026-10-02T03:36:00Z') }
   status = build ? {version: build.app_version, build: build.version,
     processing: build.processing_state, internal_state: build.build_beta_detail&.internal_build_state,

@@ -1,5 +1,5 @@
 name: Verify approved reporting TestFlight processing
-# Both ready and already-in-testing Apple states count as available.
+# Inspect the uploaded build without assuming its marketing version.
 on:
   workflow_dispatch:
   push:
