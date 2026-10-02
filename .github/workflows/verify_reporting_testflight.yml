@@ -1,5 +1,5 @@
 name: Verify approved reporting TestFlight processing
-# Inspect the uploaded build without assuming its marketing version.
+# Inspect recent build metadata to diagnose Apple ingestion delay.
 on:
   workflow_dispatch:
   push:

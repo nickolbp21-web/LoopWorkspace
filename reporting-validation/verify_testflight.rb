@@ -13,8 +13,9 @@ app = Spaceship::ConnectAPI::App.find("com.#{ENV.fetch('TEAMID')}.loopkit.Loop")
 raise 'Existing app not found' unless app
 previous = nil
 1.times do
-  builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, build_number: '3')
-  build = builds.find { |b| Time.parse(b.uploaded_date) >= Time.parse('2026-10-02T03:36:00Z') }
+  builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, limit: 5)
+  puts JSON.generate(observed_builds: builds.map { |b| {version: b.app_version, build: b.version, uploaded: b.uploaded_date, processing: b.processing_state, internal_state: b.build_beta_detail&.internal_build_state} })
+  build = builds.find { |b| b.version == '3' && Time.parse(b.uploaded_date) >= Time.parse('2026-10-02T03:36:00Z') }
   status = build ? {version: build.app_version, build: build.version,
     processing: build.processing_state, internal_state: build.build_beta_detail&.internal_build_state,
     external_state: build.build_beta_detail&.external_build_state, ready_for_internal_testing: build.ready_for_internal_testing?,
