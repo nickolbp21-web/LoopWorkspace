@@ -1,7 +1,7 @@
 --- a/NightscoutServiceKit/Extensions/DoseEntry.swift
 +++ b/NightscoutServiceKit/Extensions/DoseEntry.swift
 @@ -6,6 +6,7 @@
- //  Copyright © 2019 LoopKit Authors. All rights reserved.
+ //  Copyright Â© 2019 LoopKit Authors. All rights reserved.
  //
  
 +import Foundation
@@ -38,6 +38,48 @@
          case .bolus:
              return BolusNightscoutTreatment(
                  timestamp: startDate,
+@@ -46,7 +68,8 @@
+                 automatic: automatic ?? true,
+                 syncIdentifier: syncIdentifier,
+                 insulinType: nil,
+-                reason: "suspend"
++                reason: "suspend",
++                notes: preciseBasalReport()
+             )
+         case .tempBasal:
+             return TempBasalNightscoutTreatment(
+@@ -60,9 +83,30 @@
+                 automatic: automatic ?? true,
+                 /* id: objectId, */ /// Specifying _id only works when doing a put (modify); all dose uploads are currently posting so they can be either create or update
+                 syncIdentifier: syncIdentifier,
+-                insulinType: insulinType?.brandName
++                insulinType: insulinType?.brandName,
++                notes: preciseBasalReport()
+             )
+         }
+     }
+ 
++    // Reporting metadata only. Original treatment amount/rate/duration stay unchanged.
++    private func preciseBasalReport() -> String? {
++        guard !isMutable, endDate >= startDate,
++              let identifier = syncIdentifier, !identifier.isEmpty,
++              deliveredUnits != nil || (type == .suspend && unit == .units && value == 0)
++        else { return nil }
++        let payload: [String: Any] = [
++            "schema": "loop-basal-report-v1",
++            "startUnixSeconds": startDate.timeIntervalSince1970,
++            "endUnixSeconds": endDate.timeIntervalSince1970,
++            "units": unitsInDeliverableIncrements,
++            "basis": deliveredUnits != nil ? "reportedDeliveredUnits" : "recordedUnits",
++            "immutable": true
++        ]
++        guard JSONSerialization.isValidJSONObject(payload),
++              let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
++        else { return nil }
++        return String(data: data, encoding: .utf8)
++    }
++
+ }
 --- a/NightscoutServiceKit/NightscoutService.swift
 +++ b/NightscoutServiceKit/NightscoutService.swift
 @@ -15,6 +15,7 @@

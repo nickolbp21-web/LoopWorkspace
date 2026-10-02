@@ -19,6 +19,10 @@ jobs:
         run: sudo xcode-select --switch /Applications/Xcode_26.5.app/Contents/Developer
       - name: Prepare reporting-only patch and isolated scheme
         run: python3 reporting-validation/prepare.py
+      - name: Resolve pinned reporting packages
+        run: xcodebuild -resolvePackageDependencies -workspace LoopWorkspace.xcworkspace -scheme ReportingValidation -clonedSourcePackagesDirPath /tmp/reporting-packages
+      - name: Add optional precision metadata to pinned serializer
+        run: python3 reporting-validation/prepare_package_precision.py /tmp/reporting-packages
       - name: Select simulator
         run: |
           xcrun simctl list devices available --json > /tmp/reporting-devices.json
@@ -32,4 +36,4 @@ jobs:
       - name: Compile and test reporting framework without signing or distribution
         run: |
           set -o pipefail
-          xcodebuild test -workspace LoopWorkspace.xcworkspace -scheme ReportingValidation -destination "id=$REPORTING_SIMULATOR" -derivedDataPath /tmp/reporting-build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tee /tmp/reporting-build.log
+          xcodebuild test -workspace LoopWorkspace.xcworkspace -scheme ReportingValidation -destination "id=$REPORTING_SIMULATOR" -derivedDataPath /tmp/reporting-build -clonedSourcePackagesDirPath /tmp/reporting-packages -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tee /tmp/reporting-build.log

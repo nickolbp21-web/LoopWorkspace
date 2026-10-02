@@ -37,3 +37,45 @@ final class BasalExportTests: XCTestCase {
         XCTAssertNil(unidentified.treatment(enteredBy: "loop://synthetic", withObjectId: nil))
     }
 }
+
+
+final class PreciseTempBasalExportTests: XCTestCase {
+    private let start = Date(timeIntervalSince1970: 1700000000.123456)
+    private func metadata(_ dose: DoseEntry) throws -> ([String: Any], [String: Any]) {
+        let treatment = try XCTUnwrap(dose.treatment(enteredBy: "loop://synthetic", withObjectId: nil))
+        let dictionary = treatment.dictionaryRepresentation
+        let raw = try XCTUnwrap((dictionary["notes"] as? String)?.data(using: .utf8))
+        return (dictionary, try XCTUnwrap(JSONSerialization.jsonObject(with: raw) as? [String: Any]))
+    }
+    func testExactTimesAndActualZeroSurvive() throws {
+        let end = start.addingTimeInterval(300.234567)
+        let dose = DoseEntry(type: .tempBasal, startDate: start, endDate: end,
+            value: 0.55, unit: .unitsPerHour, deliveredUnits: 0, syncIdentifier: "synthetic")
+        let (row, note) = try metadata(dose)
+        XCTAssertEqual(row["eventType"] as? String, "Temp Basal")
+        XCTAssertEqual(row["amount"] as? Double, 0)
+        XCTAssertEqual(row["rate"] as? Double, 0.55)
+        XCTAssertEqual(note["units"] as? Double, 0)
+        XCTAssertEqual(note["startUnixSeconds"] as? Double, start.timeIntervalSince1970)
+        XCTAssertEqual(note["endUnixSeconds"] as? Double, end.timeIntervalSince1970)
+        XCTAssertEqual(note["basis"] as? String, "reportedDeliveredUnits")
+    }
+    func testPendingOrUnknownDeliveryDoesNotGainEvidence() throws {
+        for mutable in [false, true] {
+            let dose = DoseEntry(type: .tempBasal, startDate: start, endDate: start.addingTimeInterval(300),
+                value: 0.55, unit: .unitsPerHour, syncIdentifier: "synthetic", isMutable: mutable)
+            let treatment = try XCTUnwrap(dose.treatment(enteredBy: "loop://synthetic", withObjectId: nil))
+            XCTAssertNil(treatment.dictionaryRepresentation["notes"])
+            XCTAssertNil(treatment.dictionaryRepresentation["amount"])
+        }
+    }
+    func testRecordedSuspendStaysZeroWithProvenance() throws {
+        let dose = DoseEntry(type: .suspend, startDate: start, endDate: start.addingTimeInterval(300),
+            value: 0, unit: .units, syncIdentifier: "synthetic-suspend")
+        let (row, note) = try metadata(dose)
+        XCTAssertEqual(row["reason"] as? String, "suspend")
+        XCTAssertNil(row["amount"])
+        XCTAssertEqual(note["units"] as? Double, 0)
+        XCTAssertEqual(note["basis"] as? String, "recordedUnits")
+    }
+}

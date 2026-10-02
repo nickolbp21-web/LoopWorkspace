@@ -1,0 +1,20 @@
+--- a/Sources/NightscoutKit/Models/Treatments/TempBasalNightscoutTreatment.swift
++++ b/Sources/NightscoutKit/Models/Treatments/TempBasalNightscoutTreatment.swift
+@@ -24,7 +24,7 @@
+     public let automatic: Bool
+     public let reason: String?
+ 
+-    public init(timestamp: Date, enteredBy: String, temp: RateType, rate: Double, absolute: Double?, duration: TimeInterval, amount: Double? = nil, automatic: Bool = true, id: String? = nil, syncIdentifier: String? = nil, insulinType: String?, reason: String? = nil) {
++    public init(timestamp: Date, enteredBy: String, temp: RateType, rate: Double, absolute: Double?, duration: TimeInterval, amount: Double? = nil, automatic: Bool = true, id: String? = nil, syncIdentifier: String? = nil, insulinType: String?, reason: String? = nil, notes: String? = nil) {
+         self.rate = rate
+         self.absolute = absolute
+         self.temp = temp
+@@ -34,7 +34,7 @@
+         self.reason = reason
+         
+         // Commenting out usage of surrogate ID until supported by Nightscout
+-        super.init(timestamp: timestamp, enteredBy: enteredBy, id: id, eventType: .tempBasal, syncIdentifier: syncIdentifier, insulinType: insulinType)
++        super.init(timestamp: timestamp, enteredBy: enteredBy, notes: notes, id: id, eventType: .tempBasal, syncIdentifier: syncIdentifier, insulinType: insulinType)
+     }
+ 
+     required public init?(_ entry: [String : Any]) {
