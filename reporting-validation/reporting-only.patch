@@ -63,7 +63,7 @@
 +    private func preciseBasalReport() -> String? {
 +        guard !isMutable, endDate >= startDate,
 +              let identifier = syncIdentifier, !identifier.isEmpty,
-+              deliveredUnits != nil || (type == .suspend && unit == .units && value == 0)
++              deliveredUnits != nil || (type == .suspend && unit == .units && unitsInDeliverableIncrements == 0)
 +        else { return nil }
 +        let payload: [String: Any] = [
 +            "schema": "loop-basal-report-v1",
