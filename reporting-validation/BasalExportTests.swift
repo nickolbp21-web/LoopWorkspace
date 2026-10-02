@@ -79,3 +79,34 @@ final class PreciseTempBasalExportTests: XCTestCase {
         XCTAssertEqual(note["basis"] as? String, "recordedUnits")
     }
 }
+
+
+final class BasalSnapshotTests: XCTestCase {
+    private let start = Date(timeIntervalSince1970: 1700000000.125)
+    func testSnapshotIsNoteWithOriginalIdentityAndActualQuantity() throws {
+        let dose = DoseEntry(type: .tempBasal, startDate: start, endDate: start.addingTimeInterval(300),
+            value: 0.55, unit: .unitsPerHour, deliveredUnits: 0.05, syncIdentifier: "synthetic-original")
+        let row = try XCTUnwrap(dose.basalSnapshotTreatment(enteredBy: "loop://synthetic")).dictionaryRepresentation
+        XCTAssertEqual(row["eventType"] as? String, "Note")
+        XCTAssertNil(row["insulin"])
+        XCTAssertNil(row["rate"])
+        XCTAssertEqual(row["syncIdentifier"] as? String, "loop-basal-snapshot-v1:synthetic-original")
+        let data = try XCTUnwrap((row["notes"] as? String)?.data(using: .utf8))
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(payload["sourceDoseIdentifier"] as? String, "synthetic-original")
+        XCTAssertEqual(payload["units"] as? Double, 0.05)
+        XCTAssertEqual(payload["startUnixSeconds"] as? Double, start.timeIntervalSince1970)
+    }
+    func testSnapshotCannotReplayBolusesOrMutableDoses() {
+        let bolus = DoseEntry(type: .bolus, startDate: start, value: 0.1, unit: .units, syncIdentifier: "synthetic")
+        let mutable = DoseEntry(type: .basal, startDate: start, value: 0.1, unit: .units, syncIdentifier: "synthetic", isMutable: true)
+        let pending = DoseEntry(type: .tempBasal, startDate: start, endDate: start.addingTimeInterval(300), value: 0.55, unit: .unitsPerHour, syncIdentifier: "synthetic")
+        for dose in [bolus,mutable,pending] { XCTAssertNil(dose.basalSnapshotTreatment(enteredBy: "loop://synthetic")) }
+    }
+    func testSnapshotRetainsScheduleDerivedBasis() throws {
+        let dose = DoseEntry(type: .basal, startDate: start, endDate: start.addingTimeInterval(300), value: 0.05, unit: .units, syncIdentifier: "BasalRateSchedule synthetic")
+        let note = try XCTUnwrap(dose.basalSnapshotTreatment(enteredBy: "loop://synthetic")?.notes)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(note.utf8)) as? [String: Any])
+        XCTAssertEqual(payload["basis"] as? String, "scheduleDerived")
+    }
+}

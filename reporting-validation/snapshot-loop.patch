@@ -1,0 +1,33 @@
+--- a/Loop/Managers/RemoteDataServicesManager.swift
++++ b/Loop/Managers/RemoteDataServicesManager.swift
+@@ -309,6 +309,30 @@
+ 
+         dispatchQueue(key).async {
+             let semaphore = DispatchSemaphore(value: 0)
++            // A separate, bounded reporting snapshot. Normal upload anchors are untouched.
++            let snapshotKey = "NightscoutImmutableBasalSnapshotV1"
++            if remoteDataService.pluginIdentifier == "NightscoutService",
++               UserDefaults.appGroup?.bool(forKey: snapshotKey) != true {
++                let snapshotSemaphore = DispatchSemaphore(value: 0)
++                self.insulinDeliveryStore.executeDoseQuery(fromQueryAnchor: InsulinDeliveryStore.QueryAnchor(), limit: 5000) { result in
++                    switch result {
++                    case .failure:
++                        snapshotSemaphore.signal()
++                    case .success(_, let created, _):
++                        guard !created.isEmpty, created.count < 5000 else {
++                            snapshotSemaphore.signal()
++                            return
++                        }
++                        remoteDataService.uploadBasalReportingSnapshot(created) { outcome in
++                            if case .success(true) = outcome {
++                                UserDefaults.appGroup?.set(true, forKey: snapshotKey)
++                            }
++                            snapshotSemaphore.signal()
++                        }
++                    }
++                }
++                snapshotSemaphore.wait()
++            }
+             let previousQueryAnchor = UserDefaults.appGroup?.getQueryAnchor(for: remoteDataService, withRemoteDataType: .dose) ?? InsulinDeliveryStore.QueryAnchor()
+             var continueUpload = false
+ 

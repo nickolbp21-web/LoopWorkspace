@@ -48,7 +48,7 @@
              )
          case .tempBasal:
              return TempBasalNightscoutTreatment(
-@@ -60,9 +83,30 @@
+@@ -60,9 +83,62 @@
                  automatic: automatic ?? true,
                  /* id: objectId, */ /// Specifying _id only works when doing a put (modify); all dose uploads are currently posting so they can be either create or update
                  syncIdentifier: syncIdentifier,
@@ -79,6 +79,38 @@
 +        return String(data: data, encoding: .utf8)
 +    }
 +
++    func basalSnapshotTreatment(enteredBy source: String) -> NightscoutTreatment? {
++        guard !isMutable, endDate >= startDate, endDate <= Date(),
++              let identifier = syncIdentifier, !identifier.isEmpty else { return nil }
++        let basis: String
++        switch type {
++        case .basal:
++            basis = deliveredUnits != nil ? "reportedDeliveredUnits" :
++                (identifier.hasPrefix("BasalRateSchedule ") ? "scheduleDerived" : "recordedUnits")
++        case .tempBasal:
++            guard deliveredUnits != nil else { return nil }
++            basis = "reportedDeliveredUnits"
++        case .suspend:
++            guard unit == .units, unitsInDeliverableIncrements == 0 else { return nil }
++            basis = "recordedUnits"
++        default:
++            return nil
++        }
++        let payload: [String: Any] = [
++            "schema": "loop-basal-report-v1", "immutable": true,
++            "sourceDoseIdentifier": identifier,
++            "startUnixSeconds": startDate.timeIntervalSince1970,
++            "endUnixSeconds": endDate.timeIntervalSince1970,
++            "units": unitsInDeliverableIncrements, "basis": basis
++        ]
++        guard JSONSerialization.isValidJSONObject(payload),
++              let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
++              let notes = String(data: data, encoding: .utf8) else { return nil }
++        return NightscoutTreatment(timestamp: startDate, enteredBy: source, notes: notes,
++            eventType: .note, syncIdentifier: "loop-basal-snapshot-v1:" + identifier,
++            insulinType: insulinType?.brandName)
++    }
++
  }
 --- a/NightscoutServiceKit/NightscoutService.swift
 +++ b/NightscoutServiceKit/NightscoutService.swift
@@ -90,7 +122,68 @@
  }
  
  
-@@ -249,7 +250,12 @@
+@@ -235,6 +236,60 @@
+         }
+     }
+ 
++    public func uploadBasalReportingSnapshot(_ doses: [DoseEntry], completion: @escaping (Result<Bool, Error>) -> Void) {
++        guard hasConfiguration, let uploader = uploader else {
++            completion(.success(false)); return
++        }
++        let wanted = doses.compactMap { $0.basalSnapshotTreatment(enteredBy: "loop://reporting-snapshot") }
++        guard !wanted.isEmpty, let first = wanted.map({ $0.timestamp }).min(),
++              let last = wanted.map({ $0.timestamp }).max() else {
++            completion(.success(false)); return
++        }
++        let interval = DateInterval(start: first.addingTimeInterval(-1), end: last.addingTimeInterval(1))
++        func reconcile(_ actual: [NightscoutTreatment]) throws -> [NightscoutTreatment] {
++            guard actual.count < 5000 else { throw NightscoutServiceError.uploadedObjectCountMismatch }
++            var missing = [NightscoutTreatment]()
++            for item in wanted {
++                let matches = actual.filter { $0.syncIdentifier == item.syncIdentifier }
++                guard matches.count <= 1 else { throw NightscoutServiceError.uploadedObjectCountMismatch }
++                if let match = matches.first {
++                    guard match.eventType == .note, match.notes == item.notes else {
++                        throw NightscoutServiceError.uploadedObjectCountMismatch
++                    }
++                } else { missing.append(item) }
++            }
++            return missing
++        }
++        uploader.fetchTreatments(dateInterval: interval, maxCount: 5000) { result in
++            switch result {
++            case .failure(let error): completion(.failure(error))
++            case .success(let actual):
++                do {
++                    let missing = try reconcile(actual)
++                    if missing.isEmpty { completion(.success(true)); return }
++                    uploader.upload(missing) { result in
++                        switch result {
++                        case .failure(let error): completion(.failure(error))
++                        case .success:
++                            uploader.fetchTreatments(dateInterval: interval, maxCount: 5000) { result in
++                                switch result {
++                                case .failure(let error): completion(.failure(error))
++                                case .success(let verified):
++                                    do {
++                                        guard try reconcile(verified).isEmpty else {
++                                            throw NightscoutServiceError.uploadedObjectCountMismatch
++                                        }
++                                        completion(.success(true))
++                                    } catch { completion(.failure(error)) }
++                                }
++                            }
++                        }
++                    }
++                } catch { completion(.failure(error)) }
++            }
++        }
++    }
++
+     public var doseDataLimit: Int? { return 1000 }
+ 
+     public func uploadDoseData(created: [DoseEntry], deleted: [DoseEntry], completion: @escaping (_ result: Result<Bool, Error>) -> Void) {
+@@ -249,7 +304,12 @@
                  completion(.failure(error))
              case .success(let createdObjectIds):
                  let createdUploaded = !created.isEmpty
