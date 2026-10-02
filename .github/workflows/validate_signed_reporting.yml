@@ -25,7 +25,7 @@ jobs:
           import hashlib,subprocess
           from pathlib import Path
           p=Path('reporting-validation/reporting-only.patch')
-          assert hashlib.sha256(p.read_bytes()).hexdigest() == 'd8fbb2327e70e45bf26ad41daab8cf632497d5d30ea50d06893a2fa1c45e26eb'
+          assert hashlib.sha256(p.read_bytes()).hexdigest() == 'e2af981700525c7b31af8fbb1809454d19dd1fb93842261b5e3f8d7b851f05b4'
           subprocess.run(['git','-C','NightscoutService','apply','--check','../reporting-validation/reporting-only.patch'],check=True)
           subprocess.run(['git','-C','NightscoutService','apply','../reporting-validation/reporting-only.patch'],check=True)
           PY
