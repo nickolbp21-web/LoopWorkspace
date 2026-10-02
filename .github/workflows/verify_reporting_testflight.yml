@@ -1,4 +1,5 @@
 name: Verify approved reporting TestFlight processing
+# Both ready and already-in-testing Apple states count as available.
 on:
   workflow_dispatch:
   push:

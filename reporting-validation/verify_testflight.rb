@@ -1,6 +1,7 @@
 require 'spaceship'
 require 'json'
 require 'time'
+$stdout.sync = true
 
 # Read-only verification of the explicitly approved reporting candidate.
 Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
@@ -15,7 +16,8 @@ previous = nil
   builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, version: '3.14.8', build_number: '3')
   build = builds.find { |b| Time.parse(b.uploaded_date) >= Time.parse('2026-10-02T03:36:00Z') }
   status = build ? {version: build.app_version, build: build.version,
-    processing: build.processing_state, ready_for_internal_testing: build.ready_for_internal_testing?,
+    processing: build.processing_state, internal_state: build.build_beta_detail&.internal_build_state,
+    external_state: build.build_beta_detail&.external_build_state, ready_for_internal_testing: build.ready_for_internal_testing?,
     expired: build.expired} : {processing: 'AWAITING_APPROVED_UPLOAD'}
   if status != previous
     puts JSON.generate(status)
@@ -23,7 +25,7 @@ previous = nil
   end
   if build
     abort 'Apple rejected candidate processing' if ['FAILED', 'INVALID'].include?(build.processing_state)
-    exit 0 if build.processing_state == 'VALID' && build.ready_for_internal_testing? && !build.expired
+    exit 0 if build.processing_state == 'VALID' && ['READY_FOR_BETA_TESTING','IN_BETA_TESTING'].include?(build.build_beta_detail&.internal_build_state) && !build.expired
   end
   sleep 30
 end
