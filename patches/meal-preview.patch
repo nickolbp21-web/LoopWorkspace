@@ -1,0 +1,107 @@
+--- a/Loop/Loop/Managers/DeeplinkManager.swift
++++ b/Loop/Loop/Managers/DeeplinkManager.swift
+@@ -7,6 +7,63 @@
+ //
+ 
+ import UIKit
++import LoopKit
++import HealthKit
++
++// BEGIN MEAL PREVIEW PARSER
++/// A preview only: this type never stores carbs or requests insulin.
++struct MealPreview {
++    let grams: Double
++    let absorptionTime: TimeInterval
++    let date: Date
++
++    init?(url: URL, now: Date = Date(), minAbsorption: TimeInterval,
++          maxAbsorption: TimeInterval) {
++        guard url.scheme?.lowercased() == "loop", url.host == "meal-preview",
++              url.path.isEmpty, url.fragment == nil,
++              url.user == nil, url.password == nil, url.port == nil,
++              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
++              let items = components.queryItems,
++              items.count == 4,
++              Set(items.map { $0.name }) == Set(["v", "grams", "absorption_minutes", "meal_time"])
++        else { return nil }
++        let values = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
++        let decimal = #"\A[0-9]+(?:\.[0-9]+)?\z"#
++        guard values["v"] == "1",
++              let gramsText = values["grams"],
++              gramsText.range(of: decimal, options: .regularExpression) != nil,
++              let grams = Double(gramsText), grams.isFinite, grams > 0,
++              let minutesText = values["absorption_minutes"],
++              minutesText.range(of: decimal, options: .regularExpression) != nil,
++              let minutes = Double(minutesText), minutes.isFinite,
++              let timeText = values["meal_time"],
++              timeText.range(of: decimal, options: .regularExpression) != nil,
++              let timestamp = Double(timeText), timestamp.isFinite
++        else { return nil }
++        let seconds = minutes * 60
++        let date = Date(timeIntervalSince1970: timestamp)
++        // Current meals only. Do not silently replace an old meal time with now.
++        guard seconds.isFinite, seconds >= minAbsorption, seconds <= maxAbsorption,
++              date <= now.addingTimeInterval(60),
++              date >= now.addingTimeInterval(-300)
++        else { return nil }
++        self.grams = grams
++        self.absorptionTime = seconds
++        self.date = date
++    }
++}
++// END MEAL PREVIEW PARSER
++
++extension MealPreview {
++    // Loop's editor restores `date`, while the stored meal also uses `startDate`.
++    // Preserve the reviewed meal time in both fields; never silently retime it.
++    var carbEntryForReview: NewCarbEntry {
++        return NewCarbEntry(date: date,
++                            quantity: HKQuantity(unit: .gram(), doubleValue: grams),
++                            startDate: date, foodType: nil, absorptionTime: absorptionTime)
++    }
++}
++
+ 
+ enum Deeplink: String, CaseIterable {
+     case carbEntry = "carb-entry"
+@@ -32,6 +89,23 @@
+     }
+     
+     func handle(_ url: URL) -> Bool {
++        if url.host == "meal-preview" {
++            guard let preview = MealPreview(url: url,
++                                            minAbsorption: LoopConstants.minCarbAbsorptionTime,
++                                            maxAbsorption: LoopConstants.maxCarbAbsorptionTime),
++                  let root = rootViewController as? RootNavigationController,
++                  root.presentedViewController == nil,
++                  root.statusTableViewController != nil,
++                  root.statusTableViewController.presentedViewController == nil,
++                  HKQuantity(unit: .gram(), doubleValue: preview.grams)
++                    .compare(LoopConstants.maxCarbEntryQuantity) != .orderedDescending
++            else { return false }
++            let entry = preview.carbEntryForReview
++            let activity = NSUserActivity.forNewCarbEntry()
++            activity.update(from: entry)
++            root.statusTableViewController.presentMealEntryScreen(activity, forceFullMealEntry: true)
++            return true
++        }
+         guard let rootViewController = rootViewController as? RootNavigationController, let deeplink = Deeplink(url: url) else {
+             return false
+         }
+--- a/Loop/Loop/View Controllers/StatusTableViewController.swift
++++ b/Loop/Loop/View Controllers/StatusTableViewController.swift
+@@ -1399,8 +1399,13 @@
+     }
+ 
+     func presentCarbEntryScreen(_ activity: NSUserActivity?) {
++        presentMealEntryScreen(activity, forceFullMealEntry: false)
++    }
++
++    // Meal previews require the full editor: Simple Bolus restores only grams.
++    func presentMealEntryScreen(_ activity: NSUserActivity?, forceFullMealEntry: Bool) {
+         let navigationWrapper: UINavigationController
+-        if FeatureFlags.simpleBolusCalculatorEnabled && !automaticDosingStatus.automaticDosingEnabled {
++        if !forceFullMealEntry && FeatureFlags.simpleBolusCalculatorEnabled && !automaticDosingStatus.automaticDosingEnabled {
+             let viewModel = SimpleBolusViewModel(delegate: deviceManager, displayMealEntry: true)
+             if let activity = activity {
+                 viewModel.restoreUserActivityState(activity)

@@ -1,9 +1,6 @@
-name: Upload approved reporting candidate to TestFlight
+name: Upload meal preview candidate to TestFlight
 on:
   workflow_dispatch:
-  push:
-    branches: [codex/validate-basal-reporting]
-    paths: ['.github/workflows/upload_reporting_candidate.yml']
 permissions:
   contents: read
   actions: read
@@ -16,12 +13,34 @@ jobs:
       GYM_CLONED_SOURCE_PACKAGES_PATH: /tmp/reporting-packages
       GYM_DISABLE_PACKAGE_AUTOMATIC_UPDATES: 'true'
       GYM_SKIP_PACKAGE_REPOSITORY_FETCHES: 'true'
-      PILOT_CHANGELOG: 'Reporting only: preserve precise basal timestamps and recover cached immutable basal records as notes. No dosing changes.'
+      PILOT_CHANGELOG: 'Adds a local meal-preview handoff from Shortcuts into the editable carb form. Review grams, absorption and time before saving. Preserves existing reporting customizations.'
     steps:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
           persist-credentials: false
+      - name: Require successful validation of the exact app source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run view 40290318684 --repo "$GITHUB_REPOSITORY" --json conclusion,headSha > /tmp/meal-validation.json
+          gh run download 40290318684 --repo "$GITHUB_REPOSITORY" --name meal-preview-build-log --dir /tmp/meal-native-proof
+          gh api "repos/$GITHUB_REPOSITORY/compare/cf1cdf89d06a2d253e8b2887bb502f3eb064a525...$GITHUB_SHA" > /tmp/meal-source-comparison.json
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          test=json.load(open('/tmp/meal-validation.json'))
+          assert test['conclusion']=='success', 'Meal parser and app build must pass first'
+          assert test['headSha']=='cf1cdf89d06a2d253e8b2887bb502f3eb064a525'
+          native=Path('/tmp/meal-native-proof/meal-preview-build.log').read_text(errors='replace')
+          assert re.search(r'testActivityRoundTripPreservesReviewedMeal[^\n]*passed', native, re.I), 'Native payload assertions must actually execute and pass'
+          changes=json.load(open('/tmp/meal-source-comparison.json'))
+          assert changes['status'] in ('ahead','identical'), 'Validation must be an ancestor of the release'
+          assert changes['merge_base_commit']['sha']=='cf1cdf89d06a2d253e8b2887bb502f3eb064a525'
+          allowed={'.github/workflows/upload_reporting_candidate.yml', 'meal-preview/README.md'}
+          assert len(changes.get('files',[])) <= 2
+          assert all(f['filename'] in allowed for f in changes.get('files',[])), 'App source changed since validation; update the validation gate'
+          PY
       - name: Select existing compiler
         run: sudo xcode-select --switch /Applications/Xcode_26.5.app/Contents/Developer
       - name: Apply the tested reporting patch
@@ -37,6 +56,10 @@ jobs:
             subprocess.run(['git','-C',repo,'apply','--check','../reporting-validation/'+name],check=True)
             subprocess.run(['git','-C',repo,'apply','../reporting-validation/'+name],check=True)
           PY
+      - name: Apply the validated meal preview patch
+        run: |
+          git apply --check patches/meal-preview.patch
+          git apply patches/meal-preview.patch
       - name: Resolve pinned reporting packages
         run: xcodebuild -resolvePackageDependencies -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace -clonedSourcePackagesDirPath /tmp/reporting-packages
       - name: Add validated precision metadata to pinned serializer
