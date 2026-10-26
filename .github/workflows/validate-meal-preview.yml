@@ -32,7 +32,7 @@ jobs:
       - name: Build unsigned simulator app
         run: |
           set -o pipefail
-          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/meal-preview-build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/meal-preview-build.log"; exit 1; }
+          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/meal-preview-build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/meal-preview-build.log"; exit 1; }
       - name: Retain build diagnostics
         if: always()
         uses: actions/upload-artifact@v6
