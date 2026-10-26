@@ -6,6 +6,16 @@ Flow: existing meal lookup and sources â†’ editable grams and absorption mi
 
 The patch targets Loop commit `c2fddb76a20500bbbd0be5d4133d64382feae689` as pinned by this workspace. It preserves the existing carb-entry URL and existing native quantity warnings and limits. It uses Loop's internal new-carb activity to restore grams, meal time, and absorption time. This handoff explicitly opens the full meal editor, including when the optional Simple Bolus Calculator is enabled; that simpler screen otherwise drops absorption. Normal meal-entry actions retain their existing UI preference. It rejects malformed/duplicate/unknown parameters, unsupported versions, nonfinite/nonpositive values, out-of-range absorption, quantities above Loop's maximum, stale meal times, and presentation while another modal is open. Invalid links return failure and do not create entries. The supported meal time is within the previous five minutes or next one minute; older meals must use the normal manual form. Reopening a valid URL may reopen a preview; it is not a save receipt. Never retry saving without checking Loop for an existing entry.
 
+## Accept typed meals, receipt screenshots, and meal photos
+
+Configure the same Meal Notes shortcut to appear in the Share Sheet and accept Images and Text (or Any if iOS requires one combined setting). Add an input branch before the existing lookup:
+
+- If `Shortcut Input` has content, set `Meal Evidence` to that input. From Photos, select one or more receipt screenshots or a meal picture, tap Share, then run Meal Notes.
+- Otherwise show a menu: `Choose photo` runs `Select Photos` with Select Multiple enabled and sets `Meal Evidence` to the selected image(s); `Type meal` runs `Ask for Input` and sets `Meal Evidence` to that text.
+- In the existing Use Model prompt, replace the typed-only meal variable with `Meal Evidence`. Keep the source lookup, Follow Up, and missing-portion questions. Apple's model action supports photos as input; actual image readability and model usage limits still depend on the device/account.
+
+Add image-specific instructions to the lookup prompt: for receipts, transcribe all readable items and quantities before checking current nutrition sources; receipt prices do not establish nutrition, and unreadable abbreviations/size options require clarification. For meal photos, list visible foods and label portion sizes as visual estimates; do not claim to know exact weights, hidden ingredients, or quantities from the image. Ask one bundled clarification when a material item/portion is uncertain. If it remains unresolved, mark the meal incomplete and do not pass a subtotal to Loop. The carb and absorption confirmation and Loop review steps below still apply unchanged.
+
 ## Shortcut changes after installation
 
 Keep your existing meal lookup, source display, and missing-portion questions. Never transfer a subtotal or a result with unresolved portions.
