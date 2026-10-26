@@ -25,7 +25,7 @@
 +              Set(items.map { $0.name }) == Set(["v", "grams", "absorption_minutes", "meal_time"])
 +        else { return nil }
 +        let values = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
-+        let decimal = #"^[0-9]+(?:\.[0-9]+)?$"#
++        let decimal = #"\A[0-9]+(?:\.[0-9]+)?\z"#
 +        guard values["v"] == "1",
 +              let gramsText = values["grams"],
 +              gramsText.range(of: decimal, options: .regularExpression) != nil,
