@@ -17,11 +17,11 @@ project.save
 
 directory = 'LoopWorkspace.xcworkspace/xcshareddata/xcschemes'
 document = REXML::Document.new(File.read("#{directory}/LoopWorkspace.xcscheme"))
-document.elements.each('Scheme/TestAction/Testables/TestableReference') do |item|
+REXML::XPath.match(document, 'Scheme/TestAction/Testables/TestableReference').each do |item|
   next if item.elements['BuildableReference'].attributes['BlueprintName'] == 'LoopTests'
   item.parent.delete_element(item)
 end
-document.elements.each('Scheme/BuildAction/BuildActionEntries/BuildActionEntry') do |item|
+REXML::XPath.match(document, 'Scheme/BuildAction/BuildActionEntries/BuildActionEntry').each do |item|
   name = item.elements['BuildableReference'].attributes['BlueprintName']
   next unless name.end_with?('Tests') && name != 'LoopTests'
   item.parent.delete_element(item)
