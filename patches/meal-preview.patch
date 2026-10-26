@@ -1,6 +1,6 @@
 --- a/Loop/Loop/Managers/DeeplinkManager.swift
 +++ b/Loop/Loop/Managers/DeeplinkManager.swift
-@@ -7,6 +7,53 @@
+@@ -7,6 +7,63 @@
  //
  
  import UIKit
@@ -51,10 +51,20 @@
 +}
 +// END MEAL PREVIEW PARSER
 +
++extension MealPreview {
++    // Loop's editor restores `date`, while the stored meal also uses `startDate`.
++    // Preserve the reviewed meal time in both fields; never silently retime it.
++    var carbEntryForReview: NewCarbEntry {
++        return NewCarbEntry(date: date,
++                            quantity: HKQuantity(unit: .gram(), doubleValue: grams),
++                            startDate: date, foodType: nil, absorptionTime: absorptionTime)
++    }
++}
++
  
  enum Deeplink: String, CaseIterable {
      case carbEntry = "carb-entry"
-@@ -32,6 +79,24 @@
+@@ -32,6 +89,23 @@
      }
      
      func handle(_ url: URL) -> Bool {
@@ -65,12 +75,11 @@
 +                  let root = rootViewController as? RootNavigationController,
 +                  root.presentedViewController == nil,
 +                  root.statusTableViewController != nil,
++                  root.statusTableViewController.presentedViewController == nil,
 +                  HKQuantity(unit: .gram(), doubleValue: preview.grams)
 +                    .compare(LoopConstants.maxCarbEntryQuantity) != .orderedDescending
 +            else { return false }
-+            let entry = NewCarbEntry(quantity: HKQuantity(unit: .gram(), doubleValue: preview.grams),
-+                                     startDate: preview.date, foodType: nil,
-+                                     absorptionTime: preview.absorptionTime)
++            let entry = preview.carbEntryForReview
 +            let activity = NSUserActivity.forNewCarbEntry()
 +            activity.update(from: entry)
 +            root.statusTableViewController.presentMealEntryScreen(activity, forceFullMealEntry: true)

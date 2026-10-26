@@ -36,12 +36,22 @@ jobs:
           Path('/tmp/test-meal-preview.swift').write_text('import Foundation\n' + parser + '\n' + Path('meal-preview/test-preview.swift').read_text())
           PY
           swift /tmp/test-meal-preview.swift
-      - name: Build unsigned simulator app
+      - name: Test native handoff in the unsigned simulator app
         run: |
           set -o pipefail
+          cat meal-preview/MealPreviewHandoffTests.swift >> Loop/LoopTests/LoopTests.swift
+          xcrun simctl list devices available --json > /tmp/meal-devices.json
+          MEAL_SIMULATOR=$(python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/meal-devices.json'))
+          rows=[d for runtime,devices in data['devices'].items() if 'iOS' in runtime for d in devices if d.get('isAvailable') and 'iPhone' in d['name']]
+          assert rows, 'No available iPhone simulator'
+          print(rows[0]['udid'])
+          PY
+          )
           xcodebuild -resolvePackageDependencies -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace -clonedSourcePackagesDirPath /tmp/reporting-packages
           python3 reporting-validation/prepare_package_precision.py /tmp/reporting-packages
-          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace -configuration Debug -destination 'generic/platform=iOS Simulator' -clonedSourcePackagesDirPath /tmp/reporting-packages -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/meal-preview-build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/meal-preview-build.log"; exit 1; }
+          xcodebuild test -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace -configuration Debug -destination "id=$MEAL_SIMULATOR" -only-testing:LoopTests/MealPreviewHandoffTests -parallel-testing-enabled NO -clonedSourcePackagesDirPath /tmp/reporting-packages -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > "$RUNNER_TEMP/meal-preview-build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/meal-preview-build.log"; exit 1; }
       - name: Retain build diagnostics
         if: always()
         uses: actions/upload-artifact@v6
