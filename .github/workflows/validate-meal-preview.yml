@@ -1,0 +1,41 @@
+name: Validate meal preview handoff
+on:
+  pull_request:
+    paths:
+      - 'patches/meal-preview.patch'
+      - 'meal-preview/**'
+      - '.github/workflows/validate-meal-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Apply only the meal preview patch
+        run: |
+          git apply --check patches/meal-preview.patch
+          git apply patches/meal-preview.patch
+      - name: Test actual patched parser
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('Loop/Loop/Managers/DeeplinkManager.swift').read_text()
+          parser = source.split('// BEGIN MEAL PREVIEW PARSER')[1].split('// END MEAL PREVIEW PARSER')[0]
+          Path('/tmp/test-meal-preview.swift').write_text('import Foundation\n' + parser + '\n' + Path('meal-preview/test-preview.swift').read_text())
+          PY
+          swift /tmp/test-meal-preview.swift
+      - name: Build unsigned simulator app
+        run: |
+          set -o pipefail
+          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/meal-preview-build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/meal-preview-build.log"; exit 1; }
+      - name: Retain build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: meal-preview-build-log
+          path: ${{ runner.temp }}/meal-preview-build.log
