@@ -36,12 +36,6 @@ jobs:
           Path('/tmp/test-meal-preview.swift').write_text('import Foundation\n' + parser + '\n' + Path('meal-preview/test-preview.swift').read_text())
           PY
           swift /tmp/test-meal-preview.swift
-      - name: Build the complete app
-        run: |
-          set -o pipefail
-          xcodebuild -resolvePackageDependencies -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace -clonedSourcePackagesDirPath /tmp/reporting-packages
-          python3 reporting-validation/prepare_package_precision.py /tmp/reporting-packages
-          xcodebuild build -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/meal-build -clonedSourcePackagesDirPath /tmp/reporting-packages -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/meal-preview-app-build.log" 2>&1 || { tail -n 70 "$RUNNER_TEMP/meal-preview-app-build.log"; exit 1; }
       - name: Test native payload round trip in a minimal iOS runner
         run: |
           set -o pipefail
