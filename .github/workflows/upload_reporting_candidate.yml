@@ -23,18 +23,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run view 40277491382 --repo "$GITHUB_REPOSITORY" --json conclusion,headSha > /tmp/meal-validation.json
-          gh api "repos/$GITHUB_REPOSITORY/compare/867cf58543a8f6a7684c4c24146cbb7c21061be7...$GITHUB_SHA" > /tmp/meal-source-comparison.json
+          gh run view 40281626272 --repo "$GITHUB_REPOSITORY" --json conclusion,headSha > /tmp/meal-validation.json
+          gh api "repos/$GITHUB_REPOSITORY/compare/57fab1242c8383930816508321240d42483597cc...$GITHUB_SHA" > /tmp/meal-source-comparison.json
           python3 - <<'PY'
           import json
           test=json.load(open('/tmp/meal-validation.json'))
           assert test['conclusion']=='success', 'Meal parser and app build must pass first'
-          assert test['headSha']=='867cf58543a8f6a7684c4c24146cbb7c21061be7'
+          assert test['headSha']=='57fab1242c8383930816508321240d42483597cc'
           changes=json.load(open('/tmp/meal-source-comparison.json'))
           assert changes['status'] in ('ahead','identical'), 'Validation must be an ancestor of the release'
-          assert changes['merge_base_commit']['sha']=='867cf58543a8f6a7684c4c24146cbb7c21061be7'
-          allowed={'.github/workflows/upload_reporting_candidate.yml'}
-          assert len(changes.get('files',[])) <= 1
+          assert changes['merge_base_commit']['sha']=='57fab1242c8383930816508321240d42483597cc'
+          allowed={'.github/workflows/upload_reporting_candidate.yml', 'meal-preview/README.md'}
+          assert len(changes.get('files',[])) <= 2
           assert all(f['filename'] in allowed for f in changes.get('files',[])), 'App source changed since validation; update the validation gate'
           PY
       - name: Select existing compiler
