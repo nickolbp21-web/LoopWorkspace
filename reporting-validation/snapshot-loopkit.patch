@@ -1,0 +1,23 @@
+--- a/LoopKit/Service/RemoteDataService.swift
++++ b/LoopKit/Service/RemoteDataService.swift
+@@ -46,6 +46,9 @@
+      - Parameter completion: The completion function to call with any success or failure.
+      */
+     func uploadTemporaryOverrideData(updated: [TemporaryScheduleOverride], deleted: [TemporaryScheduleOverride], completion: @escaping (_ result: Result<Bool, Error>) -> Void)
++
++    /// Optional recovery of immutable basal evidence; never issues pump commands.
++    func uploadBasalReportingSnapshot(_ doses: [DoseEntry], completion: @escaping (Result<Bool, Error>) -> Void)
+ 
+     /// The maximum number of dose data to upload to the remote data service at one time.
+     var doseDataLimit: Int? { get }
+@@ -120,6 +123,10 @@
+ }
+ 
+ public extension RemoteDataService {
++    func uploadBasalReportingSnapshot(_ doses: [DoseEntry], completion: @escaping (Result<Bool, Error>) -> Void) {
++        completion(.success(false))
++    }
++
+     var alertDataLimit: Int? { return nil }
+     var carbDataLimit: Int? { return nil }
+     var doseDataLimit: Int? { return nil }
