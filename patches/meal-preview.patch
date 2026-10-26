@@ -73,7 +73,7 @@
 +                                     absorptionTime: preview.absorptionTime)
 +            let activity = NSUserActivity.forNewCarbEntry()
 +            activity.update(from: entry)
-+            root.statusTableViewController.presentCarbEntryScreen(activity, forceFullMealEntry: true)
++            root.statusTableViewController.presentMealEntryScreen(activity, forceFullMealEntry: true)
 +            return true
 +        }
          guard let rootViewController = rootViewController as? RootNavigationController, let deeplink = Deeplink(url: url) else {
@@ -85,11 +85,11 @@
      }
  
      func presentCarbEntryScreen(_ activity: NSUserActivity?) {
-+        presentCarbEntryScreen(activity, forceFullMealEntry: false)
++        presentMealEntryScreen(activity, forceFullMealEntry: false)
 +    }
 +
 +    // Meal previews require the full editor: Simple Bolus restores only grams.
-+    func presentCarbEntryScreen(_ activity: NSUserActivity?, forceFullMealEntry: Bool) {
++    func presentMealEntryScreen(_ activity: NSUserActivity?, forceFullMealEntry: Bool) {
          let navigationWrapper: UINavigationController
 -        if FeatureFlags.simpleBolusCalculatorEnabled && !automaticDosingStatus.automaticDosingEnabled {
 +        if !forceFullMealEntry && FeatureFlags.simpleBolusCalculatorEnabled && !automaticDosingStatus.automaticDosingEnabled {
