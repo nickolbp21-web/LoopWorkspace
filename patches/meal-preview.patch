@@ -81,12 +81,15 @@
          }
 --- a/Loop/Loop/View Controllers/StatusTableViewController.swift
 +++ b/Loop/Loop/View Controllers/StatusTableViewController.swift
-@@ -1398,9 +1398,9 @@
-         presentCarbEntryScreen(nil)
+@@ -1399,8 +1399,13 @@
      }
  
--    func presentCarbEntryScreen(_ activity: NSUserActivity?) {
-+    func presentCarbEntryScreen(_ activity: NSUserActivity?, forceFullMealEntry: Bool = false) {
+     func presentCarbEntryScreen(_ activity: NSUserActivity?) {
++        presentCarbEntryScreen(activity, forceFullMealEntry: false)
++    }
++
++    // Meal previews require the full editor: Simple Bolus restores only grams.
++    func presentCarbEntryScreen(_ activity: NSUserActivity?, forceFullMealEntry: Bool) {
          let navigationWrapper: UINavigationController
 -        if FeatureFlags.simpleBolusCalculatorEnabled && !automaticDosingStatus.automaticDosingEnabled {
 +        if !forceFullMealEntry && FeatureFlags.simpleBolusCalculatorEnabled && !automaticDosingStatus.automaticDosingEnabled {
