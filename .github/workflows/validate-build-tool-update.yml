@@ -1,0 +1,84 @@
+name: Prepare build-tool security update
+on:
+  workflow_dispatch:
+  push:
+    branches: [security/build-tool-validation-20261115]
+    paths: [.github/workflows/validate-build-tool-update.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      FASTLANE_SKIP_UPDATE_CHECK: '1'
+      FASTLANE_HIDE_CHANGELOG: '1'
+      FASTLANE_SKIP_DOCS: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        with:
+          ruby-version: '3.4.12'
+          bundler: '4.0.12'
+          bundler-cache: false
+      - name: Resolve proposed dependency update without publishing
+        run: |
+          ruby -e 'p="Gemfile";s=File.read(p);from=%q{gem "fastlane", "2.237.0"};abort "Unexpected Gemfile" unless s.scan(from).length==1;File.write(p,s.sub(from,%q{gem "fastlane", "2.241.2"}))'
+          bundle lock --update fastlane rubyzip addressable json --conservative
+          bundle config set --local path vendor/bundle
+          bundle install --jobs 4 --retry 2
+          bundle exec fastlane --version
+          git diff -- Gemfile Gemfile.lock > build-tool-proposal.patch
+      - name: Verify patched ZIP boundary and generated IPA metadata
+        run: |
+          python3 - <<'PY'
+          import pathlib, plistlib, tempfile, zipfile
+          root = pathlib.Path(tempfile.mkdtemp(prefix='build-tool-validation-'))
+          (root/'upload').mkdir()
+          (root/'upload_backup').mkdir()
+          with zipfile.ZipFile(root/'paths.zip', 'w') as z:
+              z.writestr('../upload_backup/owned.sh', 'labeled fixture')
+              z.writestr('normal.txt', 'safe control')
+          with zipfile.ZipFile(root/'fixture.ipa', 'w') as z:
+              z.writestr('Payload/Fixture.app/Info.plist', plistlib.dumps({
+                  'CFBundleIdentifier':'local.security.fixture',
+                  'CFBundleShortVersionString':'1.2.3', 'CFBundleVersion':'42'}))
+          pathlib.Path('fixture-root.txt').write_text(str(root))
+          PY
+          bundle exec ruby <<'RUBY'
+          require 'fastlane'
+          require 'fastlane_core/ipa_file_analyser'
+          require 'zip'
+          require 'json'
+          minimums = {'fastlane'=>'2.241.2', 'rubyzip'=>'3.4.0', 'addressable'=>'2.9.1', 'json'=>'2.21.2'}
+          minimums.each { |name, minimum| abort "Unpatched #{name}" unless Gem.loaded_specs.fetch(name).version >= Gem::Version.new(minimum) }
+          root = File.read('fixture-root.txt').strip
+          Zip::File.open(File.join(root,'paths.zip')) do |zip|
+            abort 'Fixture entries missing' unless zip.entries.map(&:name).sort == ['../upload_backup/owned.sh','normal.txt'].sort
+            zip.each { |entry| entry.extract(destination_directory: File.join(root,'upload')) }
+          end
+          abort 'Sibling-prefix path traversal reproduced' if File.exist?(File.join(root,'upload_backup','owned.sh'))
+          abort 'Legitimate extraction failed' unless File.read(File.join(root,'upload','normal.txt')) == 'safe control'
+          ipa = File.join(root,'fixture.ipa')
+          analyser = FastlaneCore::IpaFileAnalyser
+          abort 'IPA identifier regression' unless analyser.fetch_app_identifier(ipa) == 'local.security.fixture'
+          abort 'IPA version regression' unless analyser.fetch_app_version(ipa) == '1.2.3'
+          abort 'IPA build regression' unless analyser.fetch_app_build(ipa) == '42'
+          File.write('dependency-validation.json', JSON.pretty_generate({
+            ruby:RUBY_VERSION, versions:minimums.keys.to_h { |n| [n,Gem.loaded_specs.fetch(n).version.to_s] },
+            sibling_prefix_traversal_refused:true, legitimate_zip_extraction:true,
+            generated_ipa_metadata:true, signing_performed:false, repository_secrets_referenced:false}))
+          RUBY
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: build-tool-proposal
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            Gemfile
+            Gemfile.lock
+            build-tool-proposal.patch
+            dependency-validation.json
