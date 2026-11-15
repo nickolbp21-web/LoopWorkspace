@@ -55,6 +55,9 @@ jobs:
           source = Path('LoopWorkspace.xcworkspace/xcshareddata/xcschemes/LoopWorkspace.xcscheme')
           original = source.read_bytes()
           tree = ET.fromstring(original)
+          for action in list(tree):
+              if action.tag != 'BuildAction':
+                  tree.remove(action)
           entries = tree.find('./BuildAction/BuildActionEntries')
           assert entries is not None
           plugins = []
@@ -68,10 +71,23 @@ jobs:
               else:
                   entries.remove(entry)
           assert plugins and len(plugins) == len(set(plugins))
+          assert all(ref.attrib['BuildableName'].endswith('.loopplugin') for ref in tree.iter('BuildableReference'))
           ET.ElementTree(tree).write(source.with_name('CodeQLPlugins.xcscheme'), encoding='utf-8', xml_declaration=True)
           Path('/tmp/codeql-plugins.json').write_text(json.dumps(plugins))
           assert source.read_bytes() == original
           print(f'Prebuilding {len(plugins)} complete plugin products; original workspace scheme preserved')
+          PY
+          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme CodeQLPlugins \
+            -configuration Debug -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath /tmp/codeql-loop-derived -dry-run build > /tmp/codeql-plugin-plan.log 2>&1
+          python3 - <<'PY'
+          from pathlib import Path
+          plan = Path('/tmp/codeql-plugin-plan.log').read_text()
+          assert "Target 'Loop' in project 'Loop'" not in plan, 'Plugin-only graph still includes the app; refusing an incorrect prebuild'
+          assert 'Target dependency graph' in plan, 'No native dependency graph was produced'
+          print('Native plugin dependency graph excludes the Loop application')
           PY
           xcodebuild -workspace LoopWorkspace.xcworkspace -scheme CodeQLPlugins \
             -configuration Debug -destination 'generic/platform=iOS Simulator' \
