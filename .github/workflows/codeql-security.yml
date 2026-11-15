@@ -1,0 +1,59 @@
+name: CodeQL security analysis
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 5 * * 2'
+permissions:
+  contents: read
+concurrency:
+  group: codeql-security-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            os: ubuntu-latest
+            build-mode: none
+          - language: ruby
+            os: ubuntu-latest
+            build-mode: none
+          - language: swift
+            os: macos-26
+            build-mode: manual
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          submodules: ${{ matrix.language == 'swift' && 'recursive' || 'false' }}
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@5895b2c9be147bc7f1c75ce72c5cb577febb1907
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - name: Build Swift for analysis
+        if: matrix.language == 'swift'
+        run: >-
+          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme Loop
+          -configuration Debug -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+          -derivedDataPath /tmp/codeql-loop-derived build
+      - name: Analyze
+        uses: github/codeql-action/analyze@5895b2c9be147bc7f1c75ce72c5cb577febb1907
+        with:
+          category: /language:${{ matrix.language }}
