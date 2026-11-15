@@ -45,14 +45,63 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-      - name: Compile Swift for analysis (non-distributable)
+      - name: Build complete plugin products before app embedding
+        if: matrix.language == 'swift'
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          source = Path('LoopWorkspace.xcworkspace/xcshareddata/xcschemes/LoopWorkspace.xcscheme')
+          original = source.read_bytes()
+          tree = ET.fromstring(original)
+          entries = tree.find('./BuildAction/BuildActionEntries')
+          assert entries is not None
+          plugins = []
+          for entry in list(entries):
+              reference = entry.find('BuildableReference')
+              assert reference is not None
+              name = reference.attrib['BuildableName']
+              if name.endswith('.loopplugin'):
+                  assert Path(name).name == name
+                  plugins.append(name)
+              else:
+                  entries.remove(entry)
+          assert plugins and len(plugins) == len(set(plugins))
+          ET.ElementTree(tree).write(source.with_name('CodeQLPlugins.xcscheme'), encoding='utf-8', xml_declaration=True)
+          Path('/tmp/codeql-plugins.json').write_text(json.dumps(plugins))
+          assert source.read_bytes() == original
+          print(f'Prebuilding {len(plugins)} complete plugin products; original workspace scheme preserved')
+          PY
+          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme CodeQLPlugins \
+            -configuration Debug -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath /tmp/codeql-loop-derived build
+          python3 - <<'PY'
+          import json
+          import plistlib
+          from pathlib import Path
+          products = Path('/tmp/codeql-loop-derived/Build/Products/Debug-iphonesimulator')
+          plugins = json.loads(Path('/tmp/codeql-plugins.json').read_text())
+          for name in plugins:
+              product = products / name
+              with (product / 'Info.plist').open('rb') as stream:
+                  metadata = plistlib.load(stream)
+              assert metadata.get('CFBundleIdentifier'), name
+              executable = metadata.get('CFBundleExecutable')
+              assert isinstance(executable, str) and Path(executable).name == executable, name
+              assert (product / executable).is_file(), name
+          print(f'All {len(plugins)} plugin plists and executables exist before app embedding')
+          PY
+      - name: Compile full Swift workspace for analysis (non-distributable)
         if: matrix.language == 'swift'
         run: >-
           xcodebuild -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
-          ARCHS=arm64 ONLY_ACTIVE_ARCH=YES VALIDATE_PRODUCT=NO
+          ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
           -derivedDataPath /tmp/codeql-loop-derived build
       - name: Analyze
         uses: github/codeql-action/analyze@5895b2c9be147bc7f1c75ce72c5cb577febb1907
