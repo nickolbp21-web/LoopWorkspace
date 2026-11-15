@@ -48,7 +48,7 @@ jobs:
       - name: Build Swift for analysis
         if: matrix.language == 'swift'
         run: >-
-          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme Loop
+          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
