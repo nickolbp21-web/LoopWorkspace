@@ -49,7 +49,7 @@ jobs:
         if: matrix.language == 'swift'
         run: >-
           xcodebuild -workspace LoopWorkspace.xcworkspace -scheme Loop
-          -configuration Debug -sdk iphonesimulator
+          -configuration Debug
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
           -derivedDataPath /tmp/codeql-loop-derived build
