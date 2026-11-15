@@ -45,14 +45,14 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-      - name: Build Swift for analysis
+      - name: Compile Swift for analysis (non-distributable)
         if: matrix.language == 'swift'
         run: >-
           xcodebuild -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
-          ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
+          ARCHS=arm64 ONLY_ACTIVE_ARCH=YES VALIDATE_PRODUCT=NO
           -derivedDataPath /tmp/codeql-loop-derived build
       - name: Analyze
         uses: github/codeql-action/analyze@5895b2c9be147bc7f1c75ce72c5cb577febb1907
