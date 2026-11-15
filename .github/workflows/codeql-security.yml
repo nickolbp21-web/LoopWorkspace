@@ -5,7 +5,7 @@ permissions:
   contents: read
 jobs:
   native:
-    name: Native unsigned build diagnostic
+    name: Reproduce original isolated-plugin failure
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -15,39 +15,28 @@ jobs:
         persist-credentials: false
         submodules: recursive
     - name: Build complete plugin products before app embedding
-      run: "python3 - <<'PY'\nimport json\nimport copy\nfrom pathlib import Path\n\
+      run: "set -o pipefail\npython3 - <<'PY'\nimport json\nfrom pathlib import Path\n\
         import xml.etree.ElementTree as ET\nsource = Path('LoopWorkspace.xcworkspace/xcshareddata/xcschemes/LoopWorkspace.xcscheme')\n\
         original = source.read_bytes()\ntree = ET.fromstring(original)\nfor action\
         \ in list(tree):\n    if action.tag != 'BuildAction':\n        tree.remove(action)\n\
-        support = copy.deepcopy(tree)\nsupport_entries = support.find('./BuildAction/BuildActionEntries')\n\
-        for entry in list(support_entries):\n    if not entry.find('BuildableReference').attrib['BuildableName'].endswith('.framework'):\n\
-        \        support_entries.remove(entry)\nassert len(support_entries) == 7\n\
-        assert any(entry.find('BuildableReference').attrib['BlueprintName'] == 'LoopTestingKit'\
-        \ for entry in support_entries)\nET.ElementTree(support).write(source.with_name('CodeQLSupport.xcscheme'),\
-        \ encoding='utf-8', xml_declaration=True)\nentries = tree.find('./BuildAction/BuildActionEntries')\n\
-        assert entries is not None\nplugins = []\nfor entry in list(entries):\n  \
-        \  reference = entry.find('BuildableReference')\n    assert reference is not\
-        \ None\n    name = reference.attrib['BuildableName']\n    if name.endswith('.loopplugin'):\n\
-        \        assert Path(name).name == name\n        plugins.append(name)\n  \
-        \  else:\n        entries.remove(entry)\nassert plugins and len(plugins) ==\
-        \ len(set(plugins))\nassert all(ref.attrib['BuildableName'].endswith('.loopplugin')\
+        entries = tree.find('./BuildAction/BuildActionEntries')\nassert entries is\
+        \ not None\nplugins = []\nfor entry in list(entries):\n    reference = entry.find('BuildableReference')\n\
+        \    assert reference is not None\n    name = reference.attrib['BuildableName']\n\
+        \    if name.endswith('.loopplugin'):\n        assert Path(name).name == name\n\
+        \        plugins.append(name)\n    else:\n        entries.remove(entry)\n\
+        assert plugins and len(plugins) == len(set(plugins))\nassert all(ref.attrib['BuildableName'].endswith('.loopplugin')\
         \ for ref in tree.iter('BuildableReference'))\nET.ElementTree(tree).write(source.with_name('CodeQLPlugins.xcscheme'),\
         \ encoding='utf-8', xml_declaration=True)\nPath('/tmp/codeql-plugins.json').write_text(json.dumps(plugins))\n\
         assert source.read_bytes() == original\nprint(f'Prebuilding {len(plugins)}\
-        \ complete plugin products; original workspace scheme preserved')\nPY\nset\
-        \ -o pipefail\nxcodebuild -workspace LoopWorkspace.xcworkspace -scheme CodeQLSupport\
-        \ \\\n  -configuration Debug -destination 'generic/platform=iOS Simulator'\
-        \ \\\n  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \\\n  ARCHS=arm64\
-        \ ONLY_ACTIVE_ARCH=YES \\\n  -derivedDataPath /tmp/codeql-loop-derived build\
-        \ 2>&1 | tee /tmp/codeql-support-build.log\nxcodebuild -workspace LoopWorkspace.xcworkspace\
-        \ -scheme CodeQLPlugins \\\n  -configuration Debug -destination 'generic/platform=iOS\
-        \ Simulator' \\\n  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \\\n \
-        \ ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \\\n  -derivedDataPath /tmp/codeql-loop-derived\
-        \ build 2>&1 | tee /tmp/codeql-plugin-plan.log\npython3 - <<'PY'\nfrom pathlib\
-        \ import Path\nplan = Path('/tmp/codeql-plugin-plan.log').read_text()\nassert\
-        \ \"Target 'Loop' in project 'Loop'\" not in plan, 'Plugin-only graph still\
-        \ includes the app; refusing an incorrect prebuild'\nassert 'Target dependency\
-        \ graph' in plan, 'No native dependency graph was produced'\nprint('Native\
+        \ complete plugin products; original workspace scheme preserved')\nPY\nxcodebuild\
+        \ -workspace LoopWorkspace.xcworkspace -scheme CodeQLPlugins \\\n  -configuration\
+        \ Debug -destination 'generic/platform=iOS Simulator' \\\n  CODE_SIGNING_ALLOWED=NO\
+        \ CODE_SIGNING_REQUIRED=NO \\\n  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \\\n  -derivedDataPath\
+        \ /tmp/codeql-loop-derived build 2>&1 | tee /tmp/codeql-plugin-plan.log\n\
+        python3 - <<'PY'\nfrom pathlib import Path\nplan = Path('/tmp/codeql-plugin-plan.log').read_text()\n\
+        assert \"Target 'Loop' in project 'Loop'\" not in plan, 'Plugin-only graph\
+        \ still includes the app; refusing an incorrect prebuild'\nassert 'Target\
+        \ dependency graph' in plan, 'No native dependency graph was produced'\nprint('Native\
         \ plugin dependency graph excludes the Loop application')\nPY\npython3 - <<'PY'\n\
         import json\nimport plistlib\nfrom pathlib import Path\nproducts = Path('/tmp/codeql-loop-derived/Build/Products/Debug-iphonesimulator')\n\
         plugins = json.loads(Path('/tmp/codeql-plugins.json').read_text())\nfor name\
