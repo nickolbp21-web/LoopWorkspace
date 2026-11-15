@@ -32,6 +32,34 @@ jobs:
           bundle install --jobs 4 --retry 2
           bundle exec fastlane --version
           git diff -- Gemfile Gemfile.lock > build-tool-proposal.patch
+      - name: Verify locked Match table guard with synthetic values
+        run: |
+          bundle exec ruby <<'RUBY'
+          require 'fastlane'
+          require 'match'
+          require 'stringio'
+          require 'json'
+          def render_fixture
+            previous = $stdout
+            stream = StringIO.new
+            $stdout = stream
+            begin
+              Match::TablePrinter.print_certificate_info(cert_info: [['fixture-canary']])
+              Match::TablePrinter.print_summary(app_identifier: 'fixture-canary', type: :appstore)
+            ensure
+              $stdout = previous
+            end
+            stream.string
+          end
+          abort 'Unpatched control did not exercise the table sinks' unless render_fixture.include?('fixture-canary')
+          load './Scripts/suppress_match_tables.rb'
+          load File.join(Gem.loaded_specs.fetch('fastlane').full_gem_path, 'match/lib/match/table_printer.rb')
+          load './Scripts/suppress_match_tables.rb'
+          abort 'Synthetic table value remains printable' if render_fixture.include?('fixture-canary')
+          File.write('match-table-validation.json', JSON.pretty_generate({
+            unpatched_synthetic_control:true, locked_gem_guard_verified:true,
+            idempotent:true, synthetic_values_suppressed:true, signing_performed:false}))
+          RUBY
       - name: Verify patched ZIP boundary and generated IPA metadata
         run: |
           python3 - <<'PY'
@@ -82,3 +110,5 @@ jobs:
             Gemfile.lock
             build-tool-proposal.patch
             dependency-validation.json
+            match-table-validation.json
+            Scripts/suppress_match_tables.rb
