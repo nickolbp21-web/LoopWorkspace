@@ -81,7 +81,7 @@ jobs:
             -configuration Debug -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
-            -derivedDataPath /tmp/codeql-loop-derived -dry-run build > /tmp/codeql-plugin-plan.log 2>&1 || { status=$?; tail -n 100 /tmp/codeql-plugin-plan.log; exit "$status"; }
+            -derivedDataPath /tmp/codeql-loop-derived build > /tmp/codeql-plugin-plan.log 2>&1 || { status=$?; tail -n 100 /tmp/codeql-plugin-plan.log; exit "$status"; }
           python3 - <<'PY'
           from pathlib import Path
           plan = Path('/tmp/codeql-plugin-plan.log').read_text()
@@ -89,11 +89,6 @@ jobs:
           assert 'Target dependency graph' in plan, 'No native dependency graph was produced'
           print('Native plugin dependency graph excludes the Loop application')
           PY
-          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme CodeQLPlugins \
-            -configuration Debug -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
-            -derivedDataPath /tmp/codeql-loop-derived build
           python3 - <<'PY'
           import json
           import plistlib
