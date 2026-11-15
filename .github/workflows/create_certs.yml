@@ -1,3 +1,6 @@
+permissions:
+  contents: read
+
 name: 3. Create Certificates
 run-name: Create Certificates (${{ github.ref_name }})
 

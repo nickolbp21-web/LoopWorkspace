@@ -1,3 +1,6 @@
+permissions:
+  contents: read
+
 name: 4. Build Loop Manual
 run-name: Build Loop Manual (${{ github.ref_name }})
 on:
