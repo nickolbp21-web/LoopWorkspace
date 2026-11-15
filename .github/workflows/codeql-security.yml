@@ -50,6 +50,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json
+          import copy
           from pathlib import Path
           import xml.etree.ElementTree as ET
           source = Path('LoopWorkspace.xcworkspace/xcshareddata/xcschemes/LoopWorkspace.xcscheme')
@@ -58,6 +59,14 @@ jobs:
           for action in list(tree):
               if action.tag != 'BuildAction':
                   tree.remove(action)
+          support = copy.deepcopy(tree)
+          support_entries = support.find('./BuildAction/BuildActionEntries')
+          for entry in list(support_entries):
+              if not entry.find('BuildableReference').attrib['BuildableName'].endswith('.framework'):
+                  support_entries.remove(entry)
+          assert len(support_entries) == 7
+          assert any(entry.find('BuildableReference').attrib['BlueprintName'] == 'LoopTestingKit' for entry in support_entries)
+          ET.ElementTree(support).write(source.with_name('CodeQLSupport.xcscheme'), encoding='utf-8', xml_declaration=True)
           entries = tree.find('./BuildAction/BuildActionEntries')
           assert entries is not None
           plugins = []
@@ -77,11 +86,17 @@ jobs:
           assert source.read_bytes() == original
           print(f'Prebuilding {len(plugins)} complete plugin products; original workspace scheme preserved')
           PY
+          set -o pipefail
+          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme CodeQLSupport \
+            -configuration Debug -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath /tmp/codeql-loop-derived build 2>&1 | tee /tmp/codeql-support-build.log
           xcodebuild -workspace LoopWorkspace.xcworkspace -scheme CodeQLPlugins \
             -configuration Debug -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
-            -derivedDataPath /tmp/codeql-loop-derived build > /tmp/codeql-plugin-plan.log 2>&1 || { status=$?; tail -n 100 /tmp/codeql-plugin-plan.log; exit "$status"; }
+            -derivedDataPath /tmp/codeql-loop-derived build 2>&1 | tee /tmp/codeql-plugin-plan.log
           python3 - <<'PY'
           from pathlib import Path
           plan = Path('/tmp/codeql-plugin-plan.log').read_text()
