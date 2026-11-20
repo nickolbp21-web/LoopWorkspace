@@ -1,0 +1,135 @@
+name: CodeQL security analysis (replacement)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 5 * * 2'
+permissions:
+  contents: read
+concurrency:
+  group: codeql-security-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            os: ubuntu-latest
+            build-mode: none
+          - language: ruby
+            os: ubuntu-latest
+            build-mode: none
+          - language: swift
+            os: macos-26
+            build-mode: manual
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.language == 'swift' && 120 || 30 }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          submodules: ${{ matrix.language == 'swift' && 'recursive' || 'false' }}
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@5895b2c9be147bc7f1c75ce72c5cb577febb1907
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - name: Build complete plugin products before app embedding
+        if: matrix.language == 'swift'
+        run: |
+          python3 - <<'PY'
+          import json
+          import copy
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          source = Path('LoopWorkspace.xcworkspace/xcshareddata/xcschemes/LoopWorkspace.xcscheme')
+          original = source.read_bytes()
+          tree = ET.fromstring(original)
+          for action in list(tree):
+              if action.tag != 'BuildAction':
+                  tree.remove(action)
+          support = copy.deepcopy(tree)
+          support_entries = support.find('./BuildAction/BuildActionEntries')
+          for entry in list(support_entries):
+              if not entry.find('BuildableReference').attrib['BuildableName'].endswith('.framework'):
+                  support_entries.remove(entry)
+          assert len(support_entries) == 7
+          assert any(entry.find('BuildableReference').attrib['BlueprintName'] == 'LoopTestingKit' for entry in support_entries)
+          ET.ElementTree(support).write(source.with_name('CodeQLSupport.xcscheme'), encoding='utf-8', xml_declaration=True)
+          entries = tree.find('./BuildAction/BuildActionEntries')
+          assert entries is not None
+          plugins = []
+          for entry in list(entries):
+              reference = entry.find('BuildableReference')
+              assert reference is not None
+              name = reference.attrib['BuildableName']
+              if name.endswith('.loopplugin'):
+                  assert Path(name).name == name
+                  plugins.append(name)
+              else:
+                  entries.remove(entry)
+          assert plugins and len(plugins) == len(set(plugins))
+          assert all(ref.attrib['BuildableName'].endswith('.loopplugin') for ref in tree.iter('BuildableReference'))
+          ET.ElementTree(tree).write(source.with_name('CodeQLPlugins.xcscheme'), encoding='utf-8', xml_declaration=True)
+          Path('/tmp/codeql-plugins.json').write_text(json.dumps(plugins))
+          assert source.read_bytes() == original
+          print(f'Prebuilding {len(plugins)} complete plugin products; original workspace scheme preserved')
+          PY
+          set -o pipefail
+          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme CodeQLSupport \
+            -configuration Debug -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath /tmp/codeql-loop-derived build 2>&1 | tee /tmp/codeql-support-build.log
+          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme CodeQLPlugins \
+            -configuration Debug -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath /tmp/codeql-loop-derived build 2>&1 | tee /tmp/codeql-plugin-plan.log
+          python3 - <<'PY'
+          from pathlib import Path
+          plan = Path('/tmp/codeql-plugin-plan.log').read_text()
+          assert "Target 'Loop' in project 'Loop'" not in plan, 'Plugin-only graph still includes the app; refusing an incorrect prebuild'
+          assert 'Target dependency graph' in plan, 'No native dependency graph was produced'
+          print('Native plugin dependency graph excludes the Loop application')
+          PY
+          python3 - <<'PY'
+          import json
+          import plistlib
+          from pathlib import Path
+          products = Path('/tmp/codeql-loop-derived/Build/Products/Debug-iphonesimulator')
+          plugins = json.loads(Path('/tmp/codeql-plugins.json').read_text())
+          for name in plugins:
+              product = products / name
+              with (product / 'Info.plist').open('rb') as stream:
+                  metadata = plistlib.load(stream)
+              assert metadata.get('CFBundleIdentifier'), name
+              executable = metadata.get('CFBundleExecutable')
+              assert isinstance(executable, str) and Path(executable).name == executable, name
+              assert (product / executable).is_file(), name
+          print(f'All {len(plugins)} plugin plists and executables exist before app embedding')
+          PY
+      - name: Compile full Swift workspace for analysis (non-distributable)
+        if: matrix.language == 'swift'
+        run: >-
+          xcodebuild -workspace LoopWorkspace.xcworkspace -scheme LoopWorkspace
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+          ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
+          -derivedDataPath /tmp/codeql-loop-derived build
+      - name: Analyze
+        uses: github/codeql-action/analyze@5895b2c9be147bc7f1c75ce72c5cb577febb1907
+        with:
+          category: /language:${{ matrix.language }}
